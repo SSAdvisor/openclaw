@@ -408,4 +408,110 @@ describe("gateway sessions patch", () => {
     expect(entry.providerOverride).toBe("synthetic");
     expect(entry.modelOverride).toBe("hf:moonshotai/Kimi-K2.5");
   });
+
+  // --- displayName patch tests ---
+
+  test("sets displayName on a session", async () => {
+    const entry = expectPatchOk(
+      await runPatch({
+        patch: { key: MAIN_SESSION_KEY, displayName: "My Cool Session" },
+      }),
+    );
+    expect(entry.displayName).toBe("My Cool Session");
+  });
+
+  test("trims whitespace from displayName", async () => {
+    const entry = expectPatchOk(
+      await runPatch({
+        patch: { key: MAIN_SESSION_KEY, displayName: "  Padded Name  " },
+      }),
+    );
+    expect(entry.displayName).toBe("Padded Name");
+  });
+
+  test("clears displayName when patch sets null", async () => {
+    const store: Record<string, SessionEntry> = {
+      [MAIN_SESSION_KEY]: { displayName: "Old Title" } as SessionEntry,
+    };
+    const entry = expectPatchOk(
+      await runPatch({
+        store,
+        patch: { key: MAIN_SESSION_KEY, displayName: null },
+      }),
+    );
+    expect(entry.displayName).toBeUndefined();
+  });
+
+  test("updates displayName on an existing session", async () => {
+    const store: Record<string, SessionEntry> = {
+      [MAIN_SESSION_KEY]: {
+        sessionId: "sess-1",
+        updatedAt: 1,
+        displayName: "Old Name",
+      } as SessionEntry,
+    };
+    const entry = expectPatchOk(
+      await runPatch({
+        store,
+        patch: { key: MAIN_SESSION_KEY, displayName: "New Name" },
+      }),
+    );
+    expect(entry.displayName).toBe("New Name");
+    expect(entry.sessionId).toBe("sess-1");
+  });
+
+  test("rejects displayName exceeding max length", async () => {
+    const tooLong = "x".repeat(129);
+    const result = await runPatch({
+      patch: { key: MAIN_SESSION_KEY, displayName: tooLong },
+    });
+    expectPatchError(result, "invalid displayName: too long");
+  });
+
+  test("allows displayName at exactly max length", async () => {
+    const maxLen = "x".repeat(128);
+    const entry = expectPatchOk(
+      await runPatch({
+        patch: { key: MAIN_SESSION_KEY, displayName: maxLen },
+      }),
+    );
+    expect(entry.displayName).toBe(maxLen);
+  });
+
+  test("sets displayName independently from label", async () => {
+    const entry = expectPatchOk(
+      await runPatch({
+        patch: {
+          key: MAIN_SESSION_KEY,
+          label: "my-label",
+          displayName: "My Display Name",
+        },
+      }),
+    );
+    expect(entry.label).toBe("my-label");
+    expect(entry.displayName).toBe("My Display Name");
+  });
+
+  test("does not enforce uniqueness on displayName (unlike label)", async () => {
+    const store: Record<string, SessionEntry> = {
+      [MAIN_SESSION_KEY]: {
+        sessionId: "sess-1",
+        updatedAt: 1,
+        displayName: "Shared Name",
+      } as SessionEntry,
+      "agent:main:other": {
+        sessionId: "sess-2",
+        updatedAt: 1,
+        displayName: "Shared Name",
+      } as SessionEntry,
+    };
+    const entry = expectPatchOk(
+      await runPatch({
+        store,
+        storeKey: "agent:main:other",
+        patch: { key: "agent:main:other", displayName: "Shared Name" },
+      }),
+    );
+    expect(entry.displayName).toBe("Shared Name");
+  });
 });

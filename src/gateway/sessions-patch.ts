@@ -28,7 +28,7 @@ import {
 import { applyVerboseOverride, parseVerboseOverride } from "../sessions/level-overrides.js";
 import { applyModelOverrideToSessionEntry } from "../sessions/model-overrides.js";
 import { normalizeSendPolicy } from "../sessions/send-policy.js";
-import { parseSessionLabel } from "../sessions/session-label.js";
+import { parseSessionDisplayName, parseSessionLabel } from "../sessions/session-label.js";
 import {
   ErrorCodes,
   type ErrorShape,
@@ -232,6 +232,19 @@ export async function applySessionsPatchToStore(params: {
         }
       }
       next.label = parsed.label;
+    }
+  }
+
+  if ("displayName" in patch) {
+    const raw = patch.displayName;
+    if (raw === null) {
+      delete next.displayName;
+    } else if (raw !== undefined) {
+      const parsed = parseSessionDisplayName(raw);
+      if (!parsed.ok) {
+        return invalid(parsed.error);
+      }
+      next.displayName = parsed.displayName;
     }
   }
 
