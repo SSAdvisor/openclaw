@@ -11,8 +11,13 @@ import {
   renderChatSessionSelect,
   renderTab,
   renderTopbarThemeModeToggle,
+  switchChatSession,
 } from "./app-render.helpers.ts";
 import type { AppViewState } from "./app-view-state.ts";
+import {
+  renderChatHistorySidebar,
+  renderHistorySidebarToggle,
+} from "./views/chat-history-sidebar.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
@@ -592,7 +597,19 @@ export function renderApp(state: AppViewState) {
               <div>
                 ${
                   isChat
-                    ? renderChatSessionSelect(state)
+                    ? html`<div style="display:flex;align-items:center;gap:8px">
+                        ${renderHistorySidebarToggle({
+                          open: state.chatHistorySidebarOpen,
+                          onToggle: () => {
+                            state.chatHistorySidebarOpen = !state.chatHistorySidebarOpen;
+                            state.applySettings({
+                              ...state.settings,
+                              chatHistorySidebarOpen: state.chatHistorySidebarOpen,
+                            });
+                          },
+                        })}
+                        ${renderChatSessionSelect(state)}
+                      </div>`
                     : html`<div class="page-title">${titleForTab(state.tab)}</div>`
                 }
                 ${isChat ? nothing : html`<div class="page-sub">${subtitleForTab(state.tab)}</div>`}
@@ -1311,7 +1328,66 @@ export function renderApp(state: AppViewState) {
 
         ${
           state.tab === "chat"
-            ? renderChat({
+            ? html`<div class="chat-with-history">
+                ${renderChatHistorySidebar({
+                  open: state.chatHistorySidebarOpen,
+                  sessions: state.sessionsResult,
+                  currentSessionKey: state.sessionKey,
+                  hideCron: state.sessionsHideCron ?? true,
+                  searchQuery: state.chatHistorySidebarSearch,
+                  renamingKey: state.chatHistorySidebarRenamingKey,
+                  renameValue: state.chatHistorySidebarRenameValue,
+                  connected: state.connected,
+                  onToggle: () => {
+                    state.chatHistorySidebarOpen = !state.chatHistorySidebarOpen;
+                    state.applySettings({
+                      ...state.settings,
+                      chatHistorySidebarOpen: state.chatHistorySidebarOpen,
+                    });
+                  },
+                  onNewChat: () => state.handleSendChat("/new", { restoreDraft: true }),
+                  onSessionSelect: (key: string) => {
+                    switchChatSession(state, key);
+                  },
+                  onSearchChange: (query: string) => {
+                    state.chatHistorySidebarSearch = query;
+                  },
+                  onRenameStart: (key: string, currentName: string) => {
+                    state.chatHistorySidebarRenamingKey = key;
+                    state.chatHistorySidebarRenameValue = currentName;
+                  },
+                  onRenameChange: (value: string) => {
+                    state.chatHistorySidebarRenameValue = value;
+                  },
+                  onRenameConfirm: async () => {
+                    const key = state.chatHistorySidebarRenamingKey;
+                    const value = state.chatHistorySidebarRenameValue.trim();
+                    state.chatHistorySidebarRenamingKey = null;
+                    state.chatHistorySidebarRenameValue = "";
+                    if (key && value && state.client && state.connected) {
+                      try {
+                        await state.client.request("sessions.patch", {
+                          key,
+                          displayName: value,
+                        });
+                        // Refresh session list to show updated title
+                        await loadSessions(state as Parameters<typeof loadSessions>[0], {
+                          activeMinutes: 0,
+                          limit: 0,
+                          includeGlobal: true,
+                          includeUnknown: true,
+                        });
+                      } catch {
+                        // best effort
+                      }
+                    }
+                  },
+                  onRenameCancel: () => {
+                    state.chatHistorySidebarRenamingKey = null;
+                    state.chatHistorySidebarRenameValue = "";
+                  },
+                })}
+                ${renderChat({
                 sessionKey: state.sessionKey,
                 onSessionKeyChange: (next) => {
                   state.sessionKey = next;
@@ -1428,7 +1504,8 @@ export function renderApp(state: AppViewState) {
                 assistantName: state.assistantName,
                 assistantAvatar: state.assistantAvatar,
                 basePath: state.basePath ?? "",
-              })
+              })}
+              </div>`
             : nothing
         }
 

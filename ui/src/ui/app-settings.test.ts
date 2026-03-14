@@ -38,6 +38,7 @@ type SettingsHost = {
     themeMode: ThemeMode;
     chatFocusMode: boolean;
     chatShowThinking: boolean;
+    chatHistorySidebarOpen: boolean;
     splitRatio: number;
     navCollapsed: boolean;
     navWidth: number;
@@ -95,6 +96,7 @@ const createHost = (tab: Tab): SettingsHost => ({
     themeMode: "system",
     chatFocusMode: false,
     chatShowThinking: true,
+    chatHistorySidebarOpen: false,
     splitRatio: 0.6,
     navCollapsed: false,
     navWidth: 220,

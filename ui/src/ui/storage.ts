@@ -17,6 +17,7 @@ export type UiSettings = {
   themeMode: ThemeMode;
   chatFocusMode: boolean;
   chatShowThinking: boolean;
+  chatHistorySidebarOpen: boolean;
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
   navCollapsed: boolean; // Collapsible sidebar state
   navWidth: number; // Sidebar width when expanded (240–400px)
@@ -131,6 +132,7 @@ export function loadSettings(): UiSettings {
     themeMode: "system",
     chatFocusMode: false,
     chatShowThinking: true,
+    chatHistorySidebarOpen: false,
     splitRatio: 0.6,
     navCollapsed: false,
     navWidth: 220,
@@ -173,6 +175,10 @@ export function loadSettings(): UiSettings {
         typeof parsed.chatShowThinking === "boolean"
           ? parsed.chatShowThinking
           : defaults.chatShowThinking,
+      chatHistorySidebarOpen:
+        typeof parsed.chatHistorySidebarOpen === "boolean"
+          ? parsed.chatHistorySidebarOpen
+          : defaults.chatHistorySidebarOpen,
       splitRatio:
         typeof parsed.splitRatio === "number" &&
         parsed.splitRatio >= 0.4 &&
@@ -214,6 +220,7 @@ function persistSettings(next: UiSettings) {
     themeMode: next.themeMode,
     chatFocusMode: next.chatFocusMode,
     chatShowThinking: next.chatShowThinking,
+    chatHistorySidebarOpen: next.chatHistorySidebarOpen,
     splitRatio: next.splitRatio,
     navCollapsed: next.navCollapsed,
     navWidth: next.navWidth,

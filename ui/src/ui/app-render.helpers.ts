@@ -289,7 +289,7 @@ export function renderChatControls(state: AppViewState) {
   `;
 }
 
-function switchChatSession(state: AppViewState, nextSessionKey: string) {
+export function switchChatSession(state: AppViewState, nextSessionKey: string) {
   state.sessionKey = nextSessionKey;
   state.chatMessage = "";
   state.chatStream = null;

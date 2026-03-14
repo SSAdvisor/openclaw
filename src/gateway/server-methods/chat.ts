@@ -58,6 +58,7 @@ import {
   resolveSessionModelRef,
 } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
+import { maybeAutoTitleSession } from "../auto-title.js";
 import { injectTimestamp, timestampOptsFromConfig } from "./agent-timestamp.js";
 import { setGatewayDedupeEntry } from "./agent-wait-dedupe.js";
 import { normalizeRpcAttachmentsToChatAttachments } from "./attachment-normalize.js";
@@ -1387,6 +1388,89 @@ export const chatHandlers: GatewayRequestHandlers = {
               payload: { runId: clientRunId, status: "ok" as const },
             },
           });
+
+          // Fire-and-forget: auto-generate a title for the session after the first exchange.
+          // This runs asynchronously and never blocks or delays the chat response.
+          void (async () => {
+            try {
+              const { cfg: latestCfg, storePath: titleStorePath, entry: titleEntry } =
+                loadSessionEntry(sessionKey);
+              // Skip if session already has a display name
+              if (titleEntry?.displayName?.trim()) {
+                return;
+              }
+              // Read the transcript to check if this is the first exchange
+              const sessionId = titleEntry?.sessionId ?? entry?.sessionId;
+              if (!sessionId) {
+                return;
+              }
+              const messages = readSessionMessages(
+                sessionId,
+                titleStorePath,
+                titleEntry?.sessionFile,
+              );
+              // Only auto-title on the first user→assistant pair
+              const userMessages = messages.filter(
+                (m: unknown) =>
+                  m != null &&
+                  typeof m === "object" &&
+                  "role" in m &&
+                  (m as { role: string }).role === "user",
+              );
+              if (userMessages.length !== 1) {
+                return;
+              }
+              // Get the first assistant reply
+              const assistantMessages = messages.filter(
+                (m: unknown) =>
+                  m != null &&
+                  typeof m === "object" &&
+                  "role" in m &&
+                  (m as { role: string }).role === "assistant",
+              );
+              if (assistantMessages.length === 0) {
+                return;
+              }
+              // Extract text content
+              const firstAssistant = assistantMessages[0] as {
+                content?: Array<{ type?: string; text?: string }> | string;
+              };
+              const assistantText =
+                typeof firstAssistant.content === "string"
+                  ? firstAssistant.content
+                  : Array.isArray(firstAssistant.content)
+                    ? firstAssistant.content
+                        .filter((c) => c.type === "text")
+                        .map((c) => c.text ?? "")
+                        .join("\n")
+                    : "";
+              if (!assistantText.trim()) {
+                return;
+              }
+              await maybeAutoTitleSession({
+                sessionKey,
+                storePath: titleStorePath,
+                entry: titleEntry,
+                userMessage: parsedMessage,
+                assistantReply: assistantText,
+                cfg: latestCfg,
+                agentId,
+                log: context.logGateway,
+                onTitleSet: (title) => {
+                  // Broadcast a session update so the UI can refresh
+                  context.broadcast("sessions", {
+                    event: "title-updated",
+                    sessionKey: rawSessionKey,
+                    displayName: title,
+                  });
+                },
+              });
+            } catch (err) {
+              context.logGateway.warn?.(
+                `auto-title: unexpected error for ${sessionKey}: ${formatForLog(err)}`,
+              );
+            }
+          })();
         })
         .catch((err) => {
           const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
