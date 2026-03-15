@@ -91,6 +91,9 @@ USER.md
 # local tooling
 .serena/
 
+# OpenClaw workspace
+.openclaw/
+
 # Agent credentials and memory (NEVER COMMIT)
 /memory/
 .agent/*.json
