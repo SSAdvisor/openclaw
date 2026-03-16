@@ -84,11 +84,6 @@ export type AppViewState = {
   sidebarContent: string | null;
   sidebarError: string | null;
   splitRatio: number;
-  // Chat history sidebar (left-side session list)
-  chatHistorySidebarOpen: boolean;
-  chatHistorySidebarSearch: string;
-  chatHistorySidebarRenamingKey: string | null;
-  chatHistorySidebarRenameValue: string;
   scrollToBottom: (opts?: { smooth?: boolean }) => void;
   devicesLoading: boolean;
   devicesError: string | null;

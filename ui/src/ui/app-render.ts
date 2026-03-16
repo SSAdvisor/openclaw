@@ -7,17 +7,15 @@ import { t } from "../i18n/index.ts";
 import { refreshChatAvatar } from "./app-chat.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
+  isCronSessionKey,
   renderChatControls,
   renderChatSessionSelect,
   renderTab,
   renderTopbarThemeModeToggle,
+  resolveSessionDisplayName,
   switchChatSession,
 } from "./app-render.helpers.ts";
 import type { AppViewState } from "./app-view-state.ts";
-import {
-  renderChatHistorySidebar,
-  renderHistorySidebarToggle,
-} from "./views/chat-history-sidebar.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
@@ -285,6 +283,152 @@ function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
   return identity?.avatarUrl;
 }
 
+/* ── Nav session items (chat group) ──────────────────── */
+
+function formatRelativeTime(ts: number | null): string {
+  if (!ts) return "";
+  const diff = Date.now() - ts;
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  return months < 12 ? `${months}mo ago` : `${Math.floor(days / 365)}y ago`;
+}
+
+/** Local rename state for nav session items (avoids polluting global view state). */
+let _navRenameKey: string | null = null;
+let _navRenameValue = "";
+
+function renderNavChatSessions(state: AppViewState, navCollapsed: boolean) {
+  if (navCollapsed) return nothing;
+  const sessions = state.sessionsResult?.sessions ?? [];
+  const filtered = sessions
+    .filter((s) => !isCronSessionKey(s.key))
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .slice(0, 8);
+
+  if (filtered.length === 0 && !state.connected) return nothing;
+
+  const requestUpdate = () => {
+    const updatableState = state as AppViewState & { requestUpdate?: () => void };
+    updatableState.requestUpdate?.();
+  };
+
+  return html`
+    <div class="nav-chat-sessions">
+      <button
+        class="nav-chat-sessions__new-btn"
+        title="New Chat"
+        ?disabled=${!state.connected}
+        @click=${() => state.handleSendChat("/new", { restoreDraft: true })}
+      >
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        New Chat
+      </button>
+      ${filtered.map((row) => {
+        const isActive = row.key === state.sessionKey;
+        const displayName = resolveSessionDisplayName(row.key, row);
+        const relTime = formatRelativeTime(row.updatedAt);
+        const isRenaming = _navRenameKey === row.key;
+
+        if (isRenaming) {
+          return html`
+            <div class="nav-session-item nav-session-item--active">
+              <input
+                class="nav-session-item__rename-input"
+                type="text"
+                .value=${_navRenameValue}
+                @input=${(e: Event) => { _navRenameValue = (e.target as HTMLInputElement).value; }}
+                @keydown=${async (e: KeyboardEvent) => {
+                  if (e.key === "Enter") {
+                    const key = _navRenameKey;
+                    const value = _navRenameValue.trim();
+                    _navRenameKey = null;
+                    _navRenameValue = "";
+                    if (key && value && state.client && state.connected) {
+                      try {
+                        await state.client.request("sessions.patch", { key, displayName: value });
+                        await loadSessions(state as Parameters<typeof loadSessions>[0], {
+                          activeMinutes: 0, limit: 0, includeGlobal: true, includeUnknown: true,
+                        });
+                      } catch { /* best effort */ }
+                    }
+                    requestUpdate();
+                  } else if (e.key === "Escape") {
+                    _navRenameKey = null;
+                    _navRenameValue = "";
+                    requestUpdate();
+                  }
+                }}
+                @blur=${async () => {
+                  const key = _navRenameKey;
+                  const value = _navRenameValue.trim();
+                  _navRenameKey = null;
+                  _navRenameValue = "";
+                  if (key && value && state.client && state.connected) {
+                    try {
+                      await state.client.request("sessions.patch", { key, displayName: value });
+                      await loadSessions(state as Parameters<typeof loadSessions>[0], {
+                        activeMinutes: 0, limit: 0, includeGlobal: true, includeUnknown: true,
+                      });
+                    } catch { /* best effort */ }
+                  }
+                  requestUpdate();
+                }}
+              />
+            </div>
+          `;
+        }
+
+        return html`
+          <div
+            class="nav-session-item ${isActive ? "nav-session-item--active" : ""}"
+            @click=${() => { if (!isActive) switchChatSession(state, row.key); }}
+            @dblclick=${() => {
+              _navRenameKey = row.key;
+              _navRenameValue = displayName;
+              requestUpdate();
+            }}
+            title=${row.key}
+          >
+            <div class="nav-session-item__content">
+              <div class="nav-session-item__name">${displayName}</div>
+            </div>
+            ${relTime ? html`<span class="nav-session-item__time">${relTime}</span>` : nothing}
+            <button
+              class="nav-session-item__rename-btn"
+              title="Rename"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                _navRenameKey = row.key;
+                _navRenameValue = displayName;
+                requestUpdate();
+              }}
+            >
+              <svg viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+            </button>
+          </div>
+        `;
+      })}
+      ${filtered.length > 0 ? html`
+        <button
+          class="nav-chat-sessions__view-all"
+          @click=${() => state.setTab("sessions" as import("./navigation.ts").Tab)}
+        >
+          All sessions →
+        </button>
+      ` : nothing}
+    </div>
+  `;
+}
+
 export function renderApp(state: AppViewState) {
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
   const requestHostUpdate =
@@ -513,6 +657,7 @@ export function renderApp(state: AppViewState) {
                       }
                       <div class="nav-section__items">
                         ${group.tabs.map((tab) => renderTab(state, tab, { collapsed: navCollapsed }))}
+                        ${group.label === "chat" && showItems ? renderNavChatSessions(state, navCollapsed) : nothing}
                       </div>
                     </section>
                   `;
@@ -597,19 +742,7 @@ export function renderApp(state: AppViewState) {
               <div>
                 ${
                   isChat
-                    ? html`<div style="display:flex;align-items:center;gap:8px">
-                        ${renderHistorySidebarToggle({
-                          open: state.chatHistorySidebarOpen,
-                          onToggle: () => {
-                            state.chatHistorySidebarOpen = !state.chatHistorySidebarOpen;
-                            state.applySettings({
-                              ...state.settings,
-                              chatHistorySidebarOpen: state.chatHistorySidebarOpen,
-                            });
-                          },
-                        })}
-                        ${renderChatSessionSelect(state)}
-                      </div>`
+                    ? html`${renderChatSessionSelect(state)}`
                     : html`<div class="page-title">${titleForTab(state.tab)}</div>`
                 }
                 ${isChat ? nothing : html`<div class="page-sub">${subtitleForTab(state.tab)}</div>`}
@@ -1328,66 +1461,7 @@ export function renderApp(state: AppViewState) {
 
         ${
           state.tab === "chat"
-            ? html`<div class="chat-with-history">
-                ${renderChatHistorySidebar({
-                  open: state.chatHistorySidebarOpen,
-                  sessions: state.sessionsResult,
-                  currentSessionKey: state.sessionKey,
-                  hideCron: state.sessionsHideCron ?? true,
-                  searchQuery: state.chatHistorySidebarSearch,
-                  renamingKey: state.chatHistorySidebarRenamingKey,
-                  renameValue: state.chatHistorySidebarRenameValue,
-                  connected: state.connected,
-                  onToggle: () => {
-                    state.chatHistorySidebarOpen = !state.chatHistorySidebarOpen;
-                    state.applySettings({
-                      ...state.settings,
-                      chatHistorySidebarOpen: state.chatHistorySidebarOpen,
-                    });
-                  },
-                  onNewChat: () => state.handleSendChat("/new", { restoreDraft: true }),
-                  onSessionSelect: (key: string) => {
-                    switchChatSession(state, key);
-                  },
-                  onSearchChange: (query: string) => {
-                    state.chatHistorySidebarSearch = query;
-                  },
-                  onRenameStart: (key: string, currentName: string) => {
-                    state.chatHistorySidebarRenamingKey = key;
-                    state.chatHistorySidebarRenameValue = currentName;
-                  },
-                  onRenameChange: (value: string) => {
-                    state.chatHistorySidebarRenameValue = value;
-                  },
-                  onRenameConfirm: async () => {
-                    const key = state.chatHistorySidebarRenamingKey;
-                    const value = state.chatHistorySidebarRenameValue.trim();
-                    state.chatHistorySidebarRenamingKey = null;
-                    state.chatHistorySidebarRenameValue = "";
-                    if (key && value && state.client && state.connected) {
-                      try {
-                        await state.client.request("sessions.patch", {
-                          key,
-                          displayName: value,
-                        });
-                        // Refresh session list to show updated title
-                        await loadSessions(state as Parameters<typeof loadSessions>[0], {
-                          activeMinutes: 0,
-                          limit: 0,
-                          includeGlobal: true,
-                          includeUnknown: true,
-                        });
-                      } catch {
-                        // best effort
-                      }
-                    }
-                  },
-                  onRenameCancel: () => {
-                    state.chatHistorySidebarRenamingKey = null;
-                    state.chatHistorySidebarRenameValue = "";
-                  },
-                })}
-                ${renderChat({
+            ? html`${renderChat({
                 sessionKey: state.sessionKey,
                 onSessionKeyChange: (next) => {
                   state.sessionKey = next;
@@ -1504,8 +1578,7 @@ export function renderApp(state: AppViewState) {
                 assistantName: state.assistantName,
                 assistantAvatar: state.assistantAvatar,
                 basePath: state.basePath ?? "",
-              })}
-              </div>`
+              })}`
             : nothing
         }
 
