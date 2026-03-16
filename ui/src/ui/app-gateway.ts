@@ -397,6 +397,34 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     return;
   }
 
+  if (evt.event === "sessions") {
+    const payload = evt.payload as
+      | { event?: string; sessionKey?: string; displayName?: string }
+      | undefined;
+    if (payload?.event === "title-updated" && payload.sessionKey && payload.displayName) {
+      // Surgically update the displayName in the cached sessions result
+      // so the nav session list reflects auto-title changes immediately.
+      const sessions = (host as unknown as OpenClawApp).sessionsResult?.sessions;
+      if (sessions) {
+        const row = sessions.find((s) => s.key === payload.sessionKey);
+        if (row) {
+          row.displayName = payload.displayName;
+          // Trigger a re-render by replacing the array reference
+          (host as unknown as OpenClawApp).sessionsResult = {
+            ...(host as unknown as OpenClawApp).sessionsResult!,
+            sessions: [...sessions],
+          };
+        } else {
+          // Session not in cache yet — do a full refresh
+          void loadSessions(host as unknown as OpenClawApp, {
+            activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+          });
+        }
+      }
+    }
+    return;
+  }
+
   if (evt.event === GATEWAY_EVENT_UPDATE_AVAILABLE) {
     const payload = evt.payload as GatewayUpdateAvailableEventPayload | undefined;
     host.updateAvailable = payload?.updateAvailable ?? null;
