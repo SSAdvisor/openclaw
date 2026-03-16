@@ -293,11 +293,13 @@ function handleTerminalChatEvent(
   const runId = payload?.runId;
   if (runId && host.refreshSessionsAfterChat.has(runId)) {
     host.refreshSessionsAfterChat.delete(runId);
-    if (state === "final") {
-      void loadSessions(host as unknown as OpenClawApp, {
-        activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
-      });
-    }
+  }
+  // Always refresh sessions on chat final so the nav session list stays current
+  // (new sessions, updated timestamps, auto-titles that landed before this fetch).
+  if (state === "final") {
+    void loadSessions(host as unknown as OpenClawApp, {
+      activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+    });
   }
   // Reload history when tools were used so the persisted tool results
   // replace the now-cleared streaming state.

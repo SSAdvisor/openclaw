@@ -198,6 +198,13 @@ export function setThemeMode(
 }
 
 export async function refreshActiveTab(host: SettingsHost) {
+  // Always load sessions — the nav sidebar shows recent sessions under Chat.
+  void loadSessions(host as unknown as OpenClawApp, {
+    activeMinutes: 0,
+    limit: 0,
+    includeGlobal: true,
+    includeUnknown: true,
+  });
   if (host.tab === "overview") {
     await loadOverview(host);
   }
