@@ -23,10 +23,17 @@ export async function loadSessions(
     includeUnknown?: boolean;
   },
 ) {
+  console.log("[sessions] loadSessions called", {
+    hasClient: !!state.client,
+    connected: state.connected,
+    loading: state.sessionsLoading,
+  });
   if (!state.client || !state.connected) {
+    console.log("[sessions] loadSessions aborted: no client or not connected");
     return;
   }
   if (state.sessionsLoading) {
+    console.log("[sessions] loadSessions aborted: already loading");
     return;
   }
   state.sessionsLoading = true;
