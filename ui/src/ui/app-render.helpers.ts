@@ -525,6 +525,14 @@ export function parseSessionKey(key: string): SessionKeyInfo {
   }
 
   // ── Unknown — return key as-is ───────────────────
+  // For agent:<id>:<name> patterns, extract the name portion and humanize it
+  const agentNameMatch = key.match(/^agent:[^:]+:(.+)$/);
+  if (agentNameMatch) {
+    const name = agentNameMatch[1]
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return { prefix: "", fallbackName: name };
+  }
   return { prefix: "", fallbackName: key };
 }
 
